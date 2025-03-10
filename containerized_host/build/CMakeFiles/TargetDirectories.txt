@@ -1,0 +1,4 @@
+/home/jakey/geo/containerized_host/build/CMakeFiles/cuda_ptx_runner.dir
+/home/jakey/geo/containerized_host/build/CMakeFiles/tiny_ptx.dir
+/home/jakey/geo/containerized_host/build/CMakeFiles/edit_cache.dir
+/home/jakey/geo/containerized_host/build/CMakeFiles/rebuild_cache.dir

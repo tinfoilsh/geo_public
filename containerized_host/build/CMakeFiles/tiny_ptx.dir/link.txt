@@ -1,0 +1,1 @@
+/usr/bin/cc CMakeFiles/tiny_ptx.dir/tiny_ptx.c.o -o tiny_ptx  /usr/lib/x86_64-linux-gnu/libcudart_static.a -ldl /usr/lib/x86_64-linux-gnu/librt.a /usr/lib/x86_64-linux-gnu/libcuda.so 

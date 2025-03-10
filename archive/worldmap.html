@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>GPU Location Bound Visualization</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+    <style>
+      body { margin: 0; padding: 20px; }
+      #map { height: 400px; width: 100%; border: 1px solid #ccc; }
+      .info { margin-top: 10px; font-family: sans-serif; }
+      .radius-value { font-weight: bold; }
+      .light { color: #f03; }
+      .network { color: #03f; }
+      .action-button {
+        background-color: #4CAF50;
+        border: none;
+        color: white;
+        padding: 10px 20px;
+        text-align: center;
+        text-decoration: none;
+        display: inline-block;
+        font-size: 16px;
+        margin: 10px 0;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: background-color 0.3s;
+      }
+      .action-button:hover {
+        background-color: #45a049;
+      }
+      .action-button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+      .status {
+        margin-top: 10px;
+        font-family: monospace;
+      }
+      .status.success {
+        color: #4CAF50;
+      }
+      .status.error {
+        color: #f44336;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <button id="sendPingButton" class="action-button">Send Ping</button>
+    <div class="info">
+      <p>Landmark Location: San Francisco (37.7749°N, 122.4194°W)</p>
+      <p id="radius-info">
+        Maximum distance bounds:<br>
+        • Speed of light: <span id="light-radius-value" class="radius-value light">calculating...</span><br>
+        • Network latency: <span id="network-radius-value" class="radius-value network">calculating...</span>
+      </p>
+      <p id="ping-status" class="status"></p>
+      <p class="info" style="font-size: 0.9em; color: #666;">
+        The network latency bound (blue) is based on empirical measurements showing ~100ms round-trip time globally.
+        This accounts for real-world factors like fiber optic cable routing, network switching delays, and TCP/IP overhead,
+        resulting in an effective speed of about 13.3% of light speed.
+      </p>
+    </div>
+    <script>
+      // Initialize map centered on San Francisco
+      const LANDMARK_LAT = 37.7749;
+      const LANDMARK_LON = -122.4194;
+      var map = L.map('map').setView([LANDMARK_LAT, LANDMARK_LON], 4);
+      var marker = null;
+      
+      // Add OpenStreetMap tile layer
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map);
+
+      // Function to update circles with new radii and coordinates
+      function updateCircles(lightRadius, networkRadius) {
+        // Get current marker position or use default San Francisco coordinates
+        const position = marker ? marker.getLatLng() : [LANDMARK_LAT, LANDMARK_LON];
+        
+        // Clear existing circles if any
+        if (window.lightCircle) {
+          map.removeLayer(window.lightCircle);
+        }
+        if (window.networkCircle) {
+          map.removeLayer(window.networkCircle);
+        }
+        
+        // Create a new bounds object
+        const bounds = new L.LatLngBounds();
+        
+        // Add new circles with the calculated radii
+        if (lightRadius !== null && !isNaN(lightRadius)) {
+          window.lightCircle = L.circle(position, {
+            radius: lightRadius,
+            color: '#f03',
+            fillColor: '#f03',
+            fillOpacity: 0.1
+          }).addTo(map);
+          bounds.extend(window.lightCircle.getBounds());
+          document.getElementById('light-radius-value').textContent = 
+            `${(lightRadius / 1000).toFixed(2)} km`;
+        } else {
+          document.getElementById('light-radius-value').textContent = 'waiting for ping...';
+        }
+
+        if (networkRadius !== null && !isNaN(networkRadius)) {
+          window.networkCircle = L.circle(position, {
+            radius: networkRadius,
+            color: '#03f',
+            fillColor: '#03f',
+            fillOpacity: 0.1
+          }).addTo(map);
+          bounds.extend(window.networkCircle.getBounds());
+          document.getElementById('network-radius-value').textContent = 
+            `${(networkRadius / 1000).toFixed(2)} km`;
+        } else {
+          document.getElementById('network-radius-value').textContent = 'waiting for ping...';
+        }
+
+        // Only fit bounds if we have at least one circle
+        if (!bounds.isEmpty()) {
+          map.fitBounds(bounds);
+        }
+      }
+
+      // Function to update visualization with new data
+      function updateVisualization(data) {
+        const lat = data.landmark.lat;
+        const lon = data.landmark.lon;
+        
+        // Create or update marker position
+        if (!marker) {
+          // Create a new marker if it doesn't exist
+          marker = L.marker([lat, lon])
+            .bindPopup('Landmark Location')
+            .addTo(map);
+        } else {
+          marker.setLatLng([lat, lon]);
+        }
+        
+        // Update circles with both radii
+        updateCircles(data.lightRadius, data.networkRadius);
+      }
+
+      // Function to fetch and update data from backend
+      async function fetchData() {
+        try {
+          const response = await fetch('/api/radius');
+          const data = await response.json();
+          updateVisualization(data);
+        } catch (error) {
+          console.error('Error fetching data:', error);
+          document.getElementById('light-radius-value').textContent = 'error fetching data';
+          document.getElementById('network-radius-value').textContent = 'error fetching data';
+        }
+      }
+
+      // Add ping functionality
+      const pingButton = document.getElementById('sendPingButton');
+      const pingStatus = document.getElementById('ping-status');
+
+      async function sendPing() {
+        try {
+          pingButton.disabled = true;
+          pingStatus.textContent = 'Sending ping...';
+          pingStatus.className = 'status';
+
+          const response = await fetch('/api/ping', {
+            method: 'POST'
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const data = await response.json();
+          pingStatus.textContent = `✅ Ping successful! Round-trip time: ${data.roundTripTime.toFixed(3)}ms`;
+          pingStatus.className = 'status success';
+
+          // Trigger an immediate fetch of new radius data
+          await fetchData();
+        } catch (error) {
+          console.error('Error sending ping:', error);
+          pingStatus.textContent = `❌ Error: ${error.message}`;
+          pingStatus.className = 'status error';
+        } finally {
+          pingButton.disabled = false;
+        }
+      }
+
+      // Add click handler for the ping button
+      pingButton.addEventListener('click', sendPing);
+
+      // Remove the setInterval call that was auto-polling
+      // Instead, do one initial fetch
+      fetchData();
+
+      // Add a function to generate consistent colors based on hostname
+      function getHostnameColor(hostname) {
+        // Simple hash function to generate a consistent number from a string
+        let hash = 0;
+        for (let i = 0; i < hostname.length; i++) {
+          hash = hostname.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return `hsl(${Math.abs(hash) % 360}, 70%, 50%)`;
+      }
+
+      // Modify the fetchAllLandmarksData function to better handle multi-landmark updates
+      async function fetchAllLandmarksData() {
+        try {
+          const resp = await fetch('/api/all_landmarks_data');
+          const data = await resp.json();
+
+          // Clear existing markers and circles if they exist
+          if (window.landmarkMarkers) {
+            window.landmarkMarkers.forEach(marker => map.removeLayer(marker));
+          }
+          if (window.gpuCircles) {
+            window.gpuCircles.forEach(circle => map.removeLayer(circle));
+          }
+
+          // Initialize arrays to store markers and circles
+          window.landmarkMarkers = [];
+          window.gpuCircles = [];
+
+          // Create bounds object to fit all markers and circles
+          let bounds = new L.LatLngBounds();
+          let hasValidData = false;
+
+          // Update or create the table container if it doesn't exist
+          let tableContainer = document.getElementById('landmarks-table');
+          if (!tableContainer) {
+            tableContainer = document.createElement('div');
+            tableContainer.id = 'landmarks-table';
+            tableContainer.style.marginTop = '20px';
+            document.body.appendChild(tableContainer);
+          }
+
+          let infoHTML = '<h3>All Landmarks Data</h3>';
+          infoHTML += '<table style="border-collapse: collapse; width: 100%;">';
+          infoHTML += '<tr><th style="border:1px solid #ccc; text-align:left; padding:5px;">Hostname</th><th style="border:1px solid #ccc; text-align:left; padding:5px;">GPU Data</th><th style="border:1px solid #ccc; text-align:left; padding:5px;">Last Update</th></tr>';
+
+          data.landmarks.forEach(landmark => {
+            const { hostname, lat, lon, gpu_data } = landmark;
+
+            // Add Leaflet marker for landmark
+            const landmarkMarker = L.marker([lat, lon])
+              .bindPopup(`Landmark: ${hostname}<br>Location: ${lat.toFixed(4)}°N, ${lon.toFixed(4)}°W`)
+              .addTo(map);
+            window.landmarkMarkers.push(landmarkMarker);
+            bounds.extend(landmarkMarker.getLatLng());
+
+            // Add circles for GPU data with different colors per landmark
+            const color = getHostnameColor(hostname);
+            if (landmark.data) {
+              Object.entries(landmark.data).forEach(([gpuId, gpuData]) => {
+                if (gpuData.radius_estimates && gpuData.radius_estimates.estimate) {
+                  const circle = L.circle([lat, lon], {
+                    radius: gpuData.radius_estimates.estimate,
+                    color: color,
+                    fillColor: color,
+                    fillOpacity: 0.1,
+                    weight: 2
+                  }).addTo(map);
+                  window.gpuCircles.push(circle);
+                  
+                  try {
+                    bounds.extend(circle.getBounds());
+                    hasValidData = true;
+                  } catch (err) {
+                    console.error('Error extending bounds:', err);
+                  }
+                }
+              });
+            }
+
+            // Build GPU data info with timestamps
+            let gpuDataList = '';
+            if (landmark.data) {
+              Object.entries(landmark.data).forEach(([gpuId, gpuData]) => {
+                if (gpuData.radius_estimates) {
+                  const estimate = gpuData.radius_estimates;
+                  gpuDataList += `<p style="margin:2px 0;">
+                     <strong>GPU ${gpuId.slice(0, 8)}...</strong><br>
+                     Radius: ${(estimate.estimate / 1000).toFixed(2)} km<br>
+                     Pings: ${gpuData.pings.length}
+                  </p>`;
+                }
+              });
+            }
+
+            const lastUpdate = landmark.data && Object.keys(landmark.data).length > 0
+              ? new Date().toLocaleTimeString()
+              : 'No data';
+
+            infoHTML += `
+              <tr>
+                <td style="border:1px solid #ccc; padding:5px;">${hostname}</td>
+                <td style="border:1px solid #ccc; padding:5px;">${gpuDataList || 'No GPU data'}</td>
+                <td style="border:1px solid #ccc; padding:5px;">${lastUpdate}</td>
+              </tr>
+            `;
+          });
+
+          infoHTML += '</table>';
+          tableContainer.innerHTML = infoHTML;
+
+          // Fit map to show all landmarks and circles
+          try {
+            if (hasValidData && !bounds.isEmpty()) {
+              map.fitBounds(bounds, { padding: [50, 50] });
+            }
+          } catch (err) {
+            console.error('Error fitting bounds:', err);
+          }
+
+        } catch (err) {
+          console.error('Error fetching all landmarks data:', err);
+        }
+      }
+
+      // Increase polling frequency for more responsive updates
+      const POLL_INTERVAL = 1000; // Poll every second
+      setInterval(fetchAllLandmarksData, POLL_INTERVAL);
+
+      // Initial fetch
+      fetchAllLandmarksData();
+    </script>
+  </body>
+</html>

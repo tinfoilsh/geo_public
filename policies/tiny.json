@@ -1,0 +1,15 @@
+{
+  "version":"3.0",
+  "authorization-rules":{
+    "type": "JWT",
+    "overall-claims": {
+      "iss": "LOCAL_GPU_VERIFIER",
+      "x-nvidia-overall-att-result": true,
+      "x-nvidia-ver": "2.0"
+    },
+    "detached-claims":{
+      "measres": "success",
+      "x-nvidia-gpu-arch-check": true
+    }
+  }
+}

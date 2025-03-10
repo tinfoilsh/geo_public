@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC -shared -Wl,-soname,libcuda_ptx_runner.so -o libcuda_ptx_runner.so CMakeFiles/cuda_ptx_runner.dir/tiny_ptx.c.o  /usr/lib/x86_64-linux-gnu/libcudart_static.a -ldl /usr/lib/x86_64-linux-gnu/librt.a /usr/lib/x86_64-linux-gnu/libcuda.so 
